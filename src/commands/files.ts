@@ -243,8 +243,6 @@ async function uploadRaw(args: string[]) {
     // Write pointer next to the page that references it
     pointerPath = `${pageSlug}/${filename}.redirect.yaml`;
     console.error(`Pointer: ${pointerPath}`);
-    // Note: the caller is responsible for writing the pointer file
-    // to the brain repo at the correct location
   }
 
   // Record in DB

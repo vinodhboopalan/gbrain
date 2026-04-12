@@ -10,7 +10,7 @@
  *   gbrain check-backlinks fix --dry-run                  # preview fixes
  */
 
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, lstatSync, existsSync } from 'fs';
 import { join, relative, basename } from 'path';
 
 interface BacklinkGap {
@@ -69,7 +69,7 @@ export function findBacklinkGaps(brainDir: string): BacklinkGap[] {
     for (const entry of readdirSync(dir)) {
       if (entry.startsWith('.')) continue;
       const full = join(dir, entry);
-      if (statSync(full).isDirectory()) {
+      if (lstatSync(full).isDirectory()) {
         walk(full);
       } else if (entry.endsWith('.md') && !entry.startsWith('_')) {
         const relPath = relative(brainDir, full);

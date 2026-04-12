@@ -98,13 +98,25 @@ export class SupabaseStorage implements StorageBackend {
     // Step 2: Upload chunks
     let offset = 0;
     while (offset < data.length) {
-      const end = Math.min(offset + TUS_CHUNK_SIZE, data.length);
-      const chunk = data.subarray(offset, end);
-
       let attempt = 0;
       const maxAttempts = 3;
       while (attempt < maxAttempts) {
         try {
+          // On retry, check server's actual offset (TUS spec requirement)
+          if (attempt > 0) {
+            const headRes = await fetch(uploadUrl, {
+              method: 'HEAD',
+              headers: { ...this.headers(), 'Tus-Resumable': '1.0.0' },
+            });
+            if (headRes.ok) {
+              const serverOffset = headRes.headers.get('Upload-Offset');
+              if (serverOffset) offset = parseInt(serverOffset, 10);
+            }
+          }
+
+          const end = Math.min(offset + TUS_CHUNK_SIZE, data.length);
+          const chunk = data.subarray(offset, end);
+
           const patchRes = await fetch(uploadUrl, {
             method: 'PATCH',
             headers: {

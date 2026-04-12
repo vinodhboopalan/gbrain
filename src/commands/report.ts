@@ -22,6 +22,12 @@ export async function runReport(args: string[]) {
   const reportType = typeIdx >= 0 ? args[typeIdx + 1] : null;
   const brainDir = dirIdx >= 0 ? args[dirIdx + 1] : '.';
 
+  // Validate reportType to prevent path traversal
+  if (reportType && !/^[a-z0-9][a-z0-9-]*$/.test(reportType)) {
+    console.error('Report type must be lowercase alphanumeric with hyphens only (e.g., "enrichment-sweep")');
+    process.exit(1);
+  }
+
   if (!reportType) {
     console.error('Usage: gbrain report --type <name> --title "..." --content "..." [--dir <brain>]');
     console.error('  Or pipe content via stdin:');

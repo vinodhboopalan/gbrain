@@ -16,7 +16,7 @@
  *   gbrain lint <file.md>          # lint single file
  */
 
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, lstatSync, existsSync } from 'fs';
 import { join, relative } from 'path';
 
 export interface LintIssue {
@@ -173,7 +173,7 @@ function collectPages(dir: string): string[] {
     for (const entry of readdirSync(d)) {
       if (entry.startsWith('.') || entry.startsWith('_')) continue;
       const full = join(d, entry);
-      if (statSync(full).isDirectory()) walk(full);
+      if (lstatSync(full).isDirectory()) walk(full);
       else if (entry.endsWith('.md')) pages.push(full);
     }
   }

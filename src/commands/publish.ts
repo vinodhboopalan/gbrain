@@ -275,11 +275,31 @@ export function generateHtml({ title, markdown, encrypted }: GenerateHtmlOptions
       window.__CT = ${JSON.stringify(encrypted.ciphertext)};
     </script>` : '';
 
+  // Sanitize markdown rendering to prevent XSS from embedded HTML in brain pages
+  const sanitizeScript = `
+    function sanitizeHtml(html) {
+      const div = document.createElement('div');
+      div.innerHTML = html;
+      div.querySelectorAll('script,iframe,object,embed,form').forEach(el => el.remove());
+      div.querySelectorAll('*').forEach(el => {
+        for (const attr of [...el.attributes]) {
+          if (attr.name.startsWith('on') || attr.value.startsWith('javascript:')) {
+            el.removeAttribute(attr.name);
+          }
+        }
+      });
+      return div.innerHTML;
+    }
+  `;
+
   const contentScript = encrypted
-    ? `<script>${DECRYPT_JS}<\/script>`
-    : `<script>
+    ? `<script>${sanitizeScript}${DECRYPT_JS.replace(
+        'document.getElementById(\'content\').innerHTML = marked.parse(result)',
+        'document.getElementById(\'content\').innerHTML = sanitizeHtml(marked.parse(result))'
+      )}<\/script>`
+    : `<script>${sanitizeScript}
         const md = ${JSON.stringify(markdown)};
-        document.getElementById('content').innerHTML = marked.parse(md);
+        document.getElementById('content').innerHTML = sanitizeHtml(marked.parse(md));
       <\/script>`;
 
   return `<!DOCTYPE html>
