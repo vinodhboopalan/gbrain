@@ -263,6 +263,26 @@ Total: N · OK: K · Failed: F.
 
 If the file ALREADY exists, `Read` it first, then `Edit` to **append** a new `## Run @ <HH:MM:SS>` section at the bottom. Don't overwrite earlier runs in the same day.
 
+## Contract
+
+This skill reads raw captures from `<vault>/inbox/` and promotes them to canonical brain
+pages as filesystem files. It guarantees:
+- All writes use `Write` / `Edit` on vault files — never `gbrain put`, `gbrain link`, or
+  `gbrain timeline-add` (DB-only writes orphan on next sync).
+- Every processed inbox file is either deleted (success) or quarantined to `inbox/_failed/`
+  (failure) — never left in place to be double-processed.
+- A daily digest is written or appended at `reports/inbox-ingest/<YYYY-MM-DD>.md`.
+- The skill is idempotent: re-running on an already-promoted file produces no duplicate pages
+  because the destination file already exists and the source file has been removed.
+
+## Output Format
+
+A daily digest at `<vault>/reports/inbox-ingest/<YYYY-MM-DD>.md` with sections:
+- **Promoted** — source filename → destination slug, entities linked
+- **Failed** — source filename + reason (files moved to `inbox/_failed/`)
+
+No structured JSON output to stdout.
+
 ## Constraints
 
 - **Do NOT** call `gbrain put`, `gbrain link`, or `gbrain timeline-add`. Those write to the gbrain DB only and orphan on the next sync tick. Use `Write` / `Edit` to write actual files in the vault.
