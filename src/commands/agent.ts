@@ -70,7 +70,12 @@ SUBMITTING
     --max-turns <n>              Max assistant turns (default 20)
     --tools a,b,c                Subset of registered tool names (comma list)
     --timeout-ms <n>             Per-job wall-clock timeout
-    --fanout-manifest <path>     JSON array of {prompt, input_vars?} — one child each
+    --fanout-manifest <path>     JSON array of {prompt, input_vars?, runtime?} — one child each
+    --runtime <name>             Default LLM transport for all children:
+                                   "anthropic" (default, uses ANTHROPIC_API_KEY) or
+                                   "claude-cli" (shells out to local claude CLI;
+                                   single-turn, tool-less, uses subscription auth).
+                                   Per-manifest-entry runtime takes precedence.
     --follow                     Tail status until terminal (default on TTY)
     --detach                     Submit + print job id, exit immediately
 
@@ -98,6 +103,7 @@ interface RunFlags {
   tools?: string[];
   timeoutMs?: number;
   fanoutManifest?: string;
+  runtime?: 'anthropic' | 'claude-cli';
   follow: boolean;
   detach: boolean;
 }
@@ -119,6 +125,15 @@ function parseRunFlags(args: string[]): { flags: RunFlags; rest: string[] } {
       case '--tools':        flags.tools = (args[++i] ?? '').split(',').map(s => s.trim()).filter(Boolean); i++; break;
       case '--timeout-ms':   flags.timeoutMs = parseInt(args[++i] ?? '', 10); i++; break;
       case '--fanout-manifest': flags.fanoutManifest = args[++i]; i++; break;
+      case '--runtime': {
+        const v = args[++i];
+        if (v !== 'anthropic' && v !== 'claude-cli') {
+          throw new Error(`--runtime must be "anthropic" or "claude-cli" (got "${v}")`);
+        }
+        flags.runtime = v;
+        i++;
+        break;
+      }
       case '--follow':       flags.follow = true; i++; break;
       case '--no-follow':    flags.follow = false; i++; break;
       case '--detach':       flags.detach = true; flags.follow = false; i++; break;
@@ -154,6 +169,7 @@ export async function runAgentRun(engine: BrainEngine, args: string[]): Promise<
   if (flags.model) data.model = flags.model;
   if (flags.maxTurns) data.max_turns = flags.maxTurns;
   if (flags.tools && flags.tools.length > 0) data.allowed_tools = flags.tools;
+  if (flags.runtime) data.runtime = flags.runtime;
 
   const submitOpts: Partial<MinionJobInput> = { max_stalled: 3 };
   if (flags.timeoutMs) submitOpts.timeout_ms = flags.timeoutMs;
@@ -176,7 +192,7 @@ export async function runAgentRun(engine: BrainEngine, args: string[]): Promise<
 
 async function runFanout(engine: BrainEngine, queue: MinionQueue, flags: RunFlags, promptTemplate: string): Promise<void> {
   const manifestPath = flags.fanoutManifest!;
-  let manifest: Array<{ prompt?: string; input_vars?: Record<string, unknown> }>;
+  let manifest: Array<{ prompt?: string; input_vars?: Record<string, unknown>; runtime?: 'anthropic' | 'claude-cli' }>;
   try {
     const raw = fs.readFileSync(manifestPath, 'utf8');
     const parsed = JSON.parse(raw);
@@ -196,9 +212,11 @@ async function runFanout(engine: BrainEngine, queue: MinionQueue, flags: RunFlag
   // Short-circuit: 1 entry → single subagent, no aggregator.
   if (manifest.length === 1) {
     const entry = manifest[0]!;
+    const effectiveRuntime = entry.runtime ?? flags.runtime;
     const data: SubagentHandlerData = {
       prompt: entry.prompt ?? promptTemplate,
       ...(entry.input_vars ? { input_vars: entry.input_vars } : {}),
+      ...(effectiveRuntime ? { runtime: effectiveRuntime } : {}),
       ...(flags.subagentDef ? { subagent_def: flags.subagentDef } : {}),
       ...(flags.model ? { model: flags.model } : {}),
       ...(flags.maxTurns ? { max_turns: flags.maxTurns } : {}),
@@ -227,9 +245,11 @@ async function runFanout(engine: BrainEngine, queue: MinionQueue, flags: RunFlag
 
   const childIds: number[] = [];
   for (const entry of manifest) {
+    const effectiveRuntime = entry.runtime ?? flags.runtime;
     const data: SubagentHandlerData = {
       prompt: entry.prompt ?? promptTemplate,
       ...(entry.input_vars ? { input_vars: entry.input_vars } : {}),
+      ...(effectiveRuntime ? { runtime: effectiveRuntime } : {}),
       ...(flags.subagentDef ? { subagent_def: flags.subagentDef } : {}),
       ...(flags.model ? { model: flags.model } : {}),
       ...(flags.maxTurns ? { max_turns: flags.maxTurns } : {}),

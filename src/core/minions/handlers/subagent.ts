@@ -48,6 +48,7 @@ import {
   logSubagentHeartbeat,
 } from './subagent-audit.ts';
 import { resolveModel, isAnthropicProvider, TIER_DEFAULTS } from '../../model-config.ts';
+import { makeClaudeCliClient } from './claude-cli-client.ts';
 
 // ── Defaults ────────────────────────────────────────────────
 
@@ -57,6 +58,14 @@ const DEFAULT_RATE_KEY = 'anthropic:messages';
 const DEFAULT_MAX_CONCURRENT = Number(process.env.GBRAIN_ANTHROPIC_MAX_INFLIGHT ?? '8');
 const DEFAULT_LEASE_TTL_MS = 120_000;
 const DEFAULT_SYSTEM = 'You are a helpful assistant running as a gbrain subagent.';
+
+// CLI runtime has a separate capacity pool: the gate is your local
+// subscription, not the API key. Defaults conservative — bump via env if
+// you have headroom. Keeping the API and CLI pools separate means a
+// fan-out of CLI children can't starve API-runtime children, and vice
+// versa.
+const CLI_RATE_KEY = 'claude-cli:local';
+const CLI_MAX_CONCURRENT = Number(process.env.GBRAIN_CLAUDE_CLI_MAX_INFLIGHT ?? '4');
 
 // ── Injectable surfaces (for tests) ─────────────────────────
 
@@ -134,11 +143,20 @@ export function makeSubagentHandler(deps: SubagentDeps) {
   // right object; JS method-call semantics preserve `this` at the call
   // site (subagent.ts invokes client.create(...) with client === sdk.messages).
   const makeAnthropic = deps.makeAnthropic ?? (() => new Anthropic());
-  const client: MessagesClient = deps.client ?? makeAnthropic().messages;
+  const apiClient: MessagesClient = deps.client ?? makeAnthropic().messages;
   const config = deps.config ?? loadConfig() ?? ({ engine: 'postgres' } as GBrainConfig);
-  const rateLeaseKey = deps.rateLeaseKey ?? DEFAULT_RATE_KEY;
-  const maxConcurrent = deps.maxConcurrent ?? DEFAULT_MAX_CONCURRENT;
+  const apiRateLeaseKey = deps.rateLeaseKey ?? DEFAULT_RATE_KEY;
+  const apiMaxConcurrent = deps.maxConcurrent ?? DEFAULT_MAX_CONCURRENT;
   const leaseTtlMs = deps.leaseTtlMs ?? DEFAULT_LEASE_TTL_MS;
+
+  // CLI client is lazy: only constructed when a job actually opts in via
+  // data.runtime === 'claude-cli'. Keeps the binary check off the hot path
+  // for everyone running the default Anthropic SDK transport.
+  let cliClient: MessagesClient | null = null;
+  const getCliClient = (): MessagesClient => {
+    if (!cliClient) cliClient = makeClaudeCliClient();
+    return cliClient;
+  };
 
   return async function subagentHandler(ctx: MinionJobContext): Promise<SubagentResult> {
     const data = (ctx.data ?? {}) as unknown as SubagentHandlerData;
@@ -168,22 +186,33 @@ export function makeSubagentHandler(deps: SubagentDeps) {
     const maxTurns = data.max_turns ?? DEFAULT_MAX_TURNS;
     const systemPrompt = data.system ?? DEFAULT_SYSTEM;
 
+    // Per-job runtime selection. CLI runtime is single-turn and tool-less:
+    // claude --print returns a final answer with no Anthropic-style
+    // tool_use blocks, so the brain registry is intentionally skipped.
+    const useCli = data.runtime === 'claude-cli';
+    const client: MessagesClient = useCli ? getCliClient() : apiClient;
+    const rateLeaseKey = useCli ? CLI_RATE_KEY : apiRateLeaseKey;
+    const maxConcurrent = useCli ? CLI_MAX_CONCURRENT : apiMaxConcurrent;
+
     // Build the tool registry bound to THIS job as the owning subagent.
+    // CLI runtime gets an empty registry — see comment above.
     // brain_id (per-call brain override; children inherit parent's unless
     // they set their own) and allowed_slug_prefixes (v0.23 trusted-workspace
     // allow-list — flows through buildBrainTools → the put_page schema
     // description AND the OperationContext, so the model's tool schema and
     // the server-side check stay in sync).
-    const registry = deps.toolRegistry ?? buildBrainTools({
+    const registry = useCli ? [] : (deps.toolRegistry ?? buildBrainTools({
       subagentId: ctx.id,
       engine,
       config,
       brainId: data.brain_id,
       allowedSlugPrefixes: data.allowed_slug_prefixes,
-    });
-    const toolDefs = data.allowed_tools && data.allowed_tools.length > 0
-      ? filterAllowedTools(registry, data.allowed_tools)
-      : registry;
+    }));
+    const toolDefs = useCli
+      ? []
+      : (data.allowed_tools && data.allowed_tools.length > 0
+          ? filterAllowedTools(registry, data.allowed_tools)
+          : registry);
 
     logSubagentSubmission({
       caller: 'worker',

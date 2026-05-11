@@ -449,6 +449,14 @@ export interface SubagentHandlerData {
    * and direct CLI submitters set it.
    */
   allowed_slug_prefixes?: string[];
+  /**
+   * Transport for the LLM call. "anthropic" (default) uses the Anthropic
+   * SDK with ANTHROPIC_API_KEY. "claude-cli" shells out to the local
+   * `claude` CLI, using whatever auth that CLI is logged into (e.g. a
+   * Max/Pro subscription). The CLI runtime is single-turn and tool-less:
+   * it ignores allowed_tools and the brain tool registry.
+   */
+  runtime?: 'anthropic' | 'claude-cli';
 }
 
 /**
