@@ -31,7 +31,7 @@ writes_to:
   - meetings/
   - media/
   - references/
-  - life/
+  - personal/
   - reports/inbox-ingest/
 ---
 

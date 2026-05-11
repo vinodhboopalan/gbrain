@@ -140,6 +140,30 @@
       "directory": "conversations/",
       "examples": ["conversations/chatgpt/{thread-slug}.md", "conversations/claude/{thread-slug}.md"],
       "description": "Imported chat exports (ChatGPT, Claude, etc.) where the conversation itself is the artifact. Cross-link concepts and people from the conversation; the conversation page is the source-of-truth for the dialog. Distinct from voice-notes/ (which holds raw voice capture)."
+    },
+    {
+      "kind": "entity",
+      "directory": "entities/",
+      "examples": ["entities/people/<slug>", "entities/companies/<slug>"],
+      "description": "Hierarchical wrapper namespace for entity pages (entities/people/, entities/companies/, etc.). Alternative to the flat people/ and companies/ — agents should match the convention already in use in the brain."
+    },
+    {
+      "kind": "reference",
+      "directory": "references/",
+      "examples": ["third-party essays", "podcast episodes with substantive ideas", "external articles"],
+      "description": "Third-party content (article, podcast, video) where the *thinking* is the primary subject. Filed by the operator's interest in the ideas, not by the original author."
+    },
+    {
+      "kind": "inbox_ingest_report",
+      "directory": "reports/inbox-ingest/",
+      "examples": ["daily inbox-to-brain digest reports"],
+      "description": "Automated daily digest written by the inbox-to-brain skill: which inbox files were promoted, where, and any failures. One file per day."
+    },
+    {
+      "kind": "x_enrichment_report",
+      "directory": "reports/x-enrichment/",
+      "examples": ["daily x-to-brain-enrich digest reports"],
+      "description": "Automated daily digest written by the x-to-brain-enrich skill: which X tweets were filed/skipped/deferred. One file per day."
     }
   ],
   "sources_dir": {
